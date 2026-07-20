@@ -1,0 +1,96 @@
+---
+- name: Check Oracle user on multiple databases
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars_files:
+    - vars.yml
+
+  vars_prompt:
+    - name: system_password
+      prompt: "Enter SYSTEM password"
+      private: yes
+
+  tasks:
+
+    - name: Create SQL file
+      copy:
+        dest: /tmp/check_user.sql
+        mode: "0600"
+        content: |
+          set pages 0
+          set feedback off
+          set heading off
+          set verify off
+          set echo off
+
+          SELECT DECODE(COUNT(*),1,'EXISTS','NOT_EXISTS')
+          FROM dba_users
+          WHERE username = UPPER('{{ oracle_user }}');
+
+          exit;
+
+    - name: Execute SQL
+      shell: >
+        sqlplus -s system/{{ system_password }}@{{ item }}
+        @/tmp/check_user.sql {{ oracle_user }}
+      loop: "{{ databases }}"
+      register: results
+      changed_when: false
+
+    - name: Display results
+      debug:
+        msg: "{{ item.item }} ==> {{ item.stdout | trim }}"
+      loop: "{{ results.results }}"
+
+    - name: Generate HTML report
+      copy:
+        dest: ./oracle_user_report.html
+        mode: "0644"
+        content: |
+          <html>
+          <head>
+            <title>Oracle User Report</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+              }
+              table {
+                border-collapse: collapse;
+                width: 60%;
+              }
+              th, td {
+                border: 1px solid black;
+                padding: 8px;
+                text-align: left;
+              }
+              th {
+                background-color: #4CAF50;
+                color: white;
+              }
+            </style>
+          </head>
+          <body>
+            <h2>Oracle User Report</h2>
+            <table>
+              <tr>
+                <th>Database</th>
+                <th>User</th>
+                <th>Status</th>
+              </tr>
+              {% for r in results.results %}
+              <tr>
+                <td>{{ r.item }}</td>
+                <td>{{ oracle_user }}</td>
+                <td>{{ r.stdout | trim }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </body>
+          </html>
+
+    - name: Remove temporary SQL file
+      file:
+        path: /tmp/check_user.sql
+        state: absent
