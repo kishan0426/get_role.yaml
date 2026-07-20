@@ -1,0 +1,6 @@
+oracle_user: "SCOTT"
+
+databases:
+   - db1
+   - db2
+   - db3
